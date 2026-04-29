@@ -16,6 +16,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   String _nombreUsuario = '';
+int _idUsuario = 0;
   double _totalVentas = 0;
   double _totalGastos = 0;
   double _totalDeudas = 0;
@@ -29,9 +30,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _cargarDatos() async {
     final prefs = await SharedPreferences.getInstance();
-    final ventas = await DBHelper.getTotalVentas();
-    final gastos = await DBHelper.getTotalGastos();
-    final deudas = await DBHelper.getTotalDeudas();
+    _idUsuario = prefs.getInt('usuario_id') ?? 0;
+    final ventas = await DBHelper.getTotalVentas(_idUsuario);
+final gastos = await DBHelper.getTotalGastos(_idUsuario);
+final deudas = await DBHelper.getTotalDeudas(_idUsuario);
     setState(() {
       _nombreUsuario = prefs.getString('usuario_nombre') ?? 'Usuario';
       _totalVentas = ventas;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 
 class VentasScreen extends StatefulWidget {
@@ -13,15 +14,22 @@ class _VentasScreenState extends State<VentasScreen> {
   final _productoController = TextEditingController();
   final _montoController = TextEditingController();
   String _tipoSeleccionado = 'Contado';
+  int _idUsuario = 0;
 
   @override
   void initState() {
     super.initState();
-    _cargarVentas();
+    _cargarUsuarioYVentas();
+  }
+
+  Future<void> _cargarUsuarioYVentas() async {
+    final prefs = await SharedPreferences.getInstance();
+    _idUsuario = prefs.getInt('usuario_id') ?? 0;
+    await _cargarVentas();
   }
 
   Future<void> _cargarVentas() async {
-    final data = await DBHelper.getVentas();
+    final data = await DBHelper.getVentas(_idUsuario);
     setState(() => _ventas = data);
   }
 
@@ -69,10 +77,13 @@ class _VentasScreenState extends State<VentasScreen> {
               Row(
                 children: ['Contado', 'Crédito'].map((tipo) => Expanded(
                   child: GestureDetector(
-                    onTap: () => setStateDialog(() => _tipoSeleccionado = tipo),
+                    onTap: () =>
+                        setStateDialog(() => _tipoSeleccionado = tipo),
                     child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 4),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
                         color: _tipoSeleccionado == tipo
                             ? const Color(0xFF6C3CE1)
@@ -102,13 +113,16 @@ class _VentasScreenState extends State<VentasScreen> {
                 if (venta != null) {
                   await DBHelper.updateVenta(venta['id'], {
                     'producto': _productoController.text,
-                    'monto': double.tryParse(_montoController.text) ?? 0.0,
+                    'monto':
+                        double.tryParse(_montoController.text) ?? 0.0,
                     'tipo': _tipoSeleccionado,
                   });
                 } else {
                   await DBHelper.insertVenta({
+                    'id_usuario': _idUsuario,
                     'producto': _productoController.text,
-                    'monto': double.tryParse(_montoController.text) ?? 0.0,
+                    'monto':
+                        double.tryParse(_montoController.text) ?? 0.0,
                     'tipo': _tipoSeleccionado,
                   });
                 }
@@ -135,7 +149,8 @@ class _VentasScreenState extends State<VentasScreen> {
       backgroundColor: const Color(0xFF1A1035),
       appBar: AppBar(
         backgroundColor: const Color(0xFF2D1F5E),
-        title: const Text('Ventas', style: TextStyle(color: Colors.white)),
+        title: const Text('Ventas',
+            style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Color(0xFFA78BFA)),
       ),
       body: _ventas.isEmpty
@@ -156,7 +171,8 @@ class _VentasScreenState extends State<VentasScreen> {
                   title: Text(_ventas[i]['producto'],
                       style: const TextStyle(color: Colors.white)),
                   subtitle: Text(_ventas[i]['tipo'],
-                      style: const TextStyle(color: Color(0xFF8B7EC8))),
+                      style:
+                          const TextStyle(color: Color(0xFF8B7EC8))),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

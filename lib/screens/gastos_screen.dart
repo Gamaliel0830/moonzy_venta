@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/db_helper.dart';
 
 class GastosScreen extends StatefulWidget {
@@ -13,15 +14,22 @@ class _GastosScreenState extends State<GastosScreen> {
   final _descripcionController = TextEditingController();
   final _montoController = TextEditingController();
   String _categoriaSeleccionada = 'Mercancía';
+  int _idUsuario = 0;
 
   @override
   void initState() {
     super.initState();
-    _cargarGastos();
+    _cargarUsuarioYGastos();
+  }
+
+  Future<void> _cargarUsuarioYGastos() async {
+    final prefs = await SharedPreferences.getInstance();
+    _idUsuario = prefs.getInt('usuario_id') ?? 0;
+    await _cargarGastos();
   }
 
   Future<void> _cargarGastos() async {
-    final data = await DBHelper.getGastos();
+    final data = await DBHelper.getGastos(_idUsuario);
     setState(() => _gastos = data);
   }
 
@@ -95,13 +103,16 @@ class _GastosScreenState extends State<GastosScreen> {
                 if (gasto != null) {
                   await DBHelper.updateGasto(gasto['id'], {
                     'descripcion': _descripcionController.text,
-                    'monto': double.tryParse(_montoController.text) ?? 0.0,
+                    'monto':
+                        double.tryParse(_montoController.text) ?? 0.0,
                     'categoria': _categoriaSeleccionada,
                   });
                 } else {
                   await DBHelper.insertGasto({
+                    'id_usuario': _idUsuario,
                     'descripcion': _descripcionController.text,
-                    'monto': double.tryParse(_montoController.text) ?? 0.0,
+                    'monto':
+                        double.tryParse(_montoController.text) ?? 0.0,
                     'categoria': _categoriaSeleccionada,
                   });
                 }
@@ -128,7 +139,8 @@ class _GastosScreenState extends State<GastosScreen> {
       backgroundColor: const Color(0xFF1A1035),
       appBar: AppBar(
         backgroundColor: const Color(0xFF2D1F5E),
-        title: const Text('Gastos', style: TextStyle(color: Colors.white)),
+        title: const Text('Gastos',
+            style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Color(0xFFA78BFA)),
       ),
       body: _gastos.isEmpty
@@ -149,7 +161,8 @@ class _GastosScreenState extends State<GastosScreen> {
                   title: Text(_gastos[i]['descripcion'],
                       style: const TextStyle(color: Colors.white)),
                   subtitle: Text(_gastos[i]['categoria'],
-                      style: const TextStyle(color: Color(0xFF8B7EC8))),
+                      style:
+                          const TextStyle(color: Color(0xFF8B7EC8))),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
