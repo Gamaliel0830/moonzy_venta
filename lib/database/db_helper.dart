@@ -14,7 +14,7 @@ class DBHelper {
     final path = join(await getDatabasesPath(), 'moonzy.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await _crearTablas(db);
       },
@@ -24,6 +24,7 @@ class DBHelper {
         await db.execute('DROP TABLE IF EXISTS gastos');
         await db.execute('DROP TABLE IF EXISTS tandas');
         await db.execute('DROP TABLE IF EXISTS tanda_participantes');
+        await db.execute('DROP TABLE IF EXISTS tanda_semanas');
         await _crearTablas(db);
       },
     );
@@ -38,16 +39,16 @@ class DBHelper {
         contrasena TEXT
       )
     ''');
-  await db.execute('''
-  CREATE TABLE IF NOT EXISTS clientes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    id_usuario INTEGER,
-    nombre TEXT,
-    telefono TEXT,
-    debe INTEGER DEFAULT 0,
-    monto_deuda REAL DEFAULT 0.0
-  )
-''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_usuario INTEGER,
+        nombre TEXT,
+        telefono TEXT,
+        debe INTEGER DEFAULT 0,
+        monto_deuda REAL DEFAULT 0.0
+      )
+    ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ventas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,14 +80,23 @@ class DBHelper {
       CREATE TABLE IF NOT EXISTS tanda_participantes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         id_tanda INTEGER,
-        nombre TEXT,
+        nombre TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tanda_semanas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_tanda INTEGER,
+        id_participante INTEGER,
+        semana INTEGER,
         pagado INTEGER DEFAULT 0
       )
     ''');
   }
 
   // ── USUARIOS ──────────────────────────────────────
-  static Future<bool> registrarUsuario(String nombre, String correo, String contrasena) async {
+  static Future<bool> registrarUsuario(
+      String nombre, String correo, String contrasena) async {
     try {
       final db = await database;
       await db.insert('usuarios', {
@@ -100,7 +110,8 @@ class DBHelper {
     }
   }
 
-  static Future<Map<String, dynamic>?> loginUsuario(String correo, String contrasena) async {
+  static Future<Map<String, dynamic>?> loginUsuario(
+      String correo, String contrasena) async {
     final db = await database;
     final result = await db.query('usuarios',
         where: 'correo = ? AND contrasena = ?',
@@ -120,7 +131,8 @@ class DBHelper {
         where: 'id_usuario = ?', whereArgs: [idUsuario]);
   }
 
-  static Future<void> updateCliente(int id, Map<String, dynamic> cliente) async {
+  static Future<void> updateCliente(
+      int id, Map<String, dynamic> cliente) async {
     final db = await database;
     await db.update('clientes', cliente, where: 'id = ?', whereArgs: [id]);
   }
@@ -196,19 +208,22 @@ class DBHelper {
     await db.delete('tandas', where: 'id = ?', whereArgs: [id]);
   }
 
-  // ── PARTICIPANTES DE TANDA ────────────────────────
-  static Future<void> insertParticipante(Map<String, dynamic> participante) async {
+  // ── PARTICIPANTES ─────────────────────────────────
+  static Future<void> insertParticipante(
+      Map<String, dynamic> participante) async {
     final db = await database;
     await db.insert('tanda_participantes', participante);
   }
 
-  static Future<List<Map<String, dynamic>>> getParticipantes(int idTanda) async {
+  static Future<List<Map<String, dynamic>>> getParticipantes(
+      int idTanda) async {
     final db = await database;
     return await db.query('tanda_participantes',
         where: 'id_tanda = ?', whereArgs: [idTanda]);
   }
 
-  static Future<void> updateParticipante(int id, Map<String, dynamic> data) async {
+  static Future<void> updateParticipante(
+      int id, Map<String, dynamic> data) async {
     final db = await database;
     await db.update('tanda_participantes', data,
         where: 'id = ?', whereArgs: [id]);
@@ -216,11 +231,75 @@ class DBHelper {
 
   static Future<void> deleteParticipantesByTanda(int idTanda) async {
     final db = await database;
+    await db.delete('tanda_semanas',
+        where: 'id_tanda = ?', whereArgs: [idTanda]);
     await db.delete('tanda_participantes',
         where: 'id_tanda = ?', whereArgs: [idTanda]);
   }
 
-  // ── TOTALES PARA DASHBOARD ────────────────────────
+  // ── SEMANAS ───────────────────────────────────────
+  static Future<void> insertSemana(Map<String, dynamic> semana) async {
+    final db = await database;
+    await db.insert('tanda_semanas', semana);
+  }
+
+  static Future<List<Map<String, dynamic>>> getSemanasByTanda(
+      int idTanda, int semana) async {
+    final db = await database;
+    return await db.query('tanda_semanas',
+        where: 'id_tanda = ? AND semana = ?',
+        whereArgs: [idTanda, semana]);
+  }
+
+  static Future<int> getUltimaSemana(int idTanda) async {
+    final db = await database;
+    final result = await db.rawQuery(
+        'SELECT MAX(semana) as ultima FROM tanda_semanas WHERE id_tanda = ?',
+        [idTanda]);
+    return (result.first['ultima'] as int?) ?? 0;
+  }
+
+  static Future<void> updateSemana(int id, int pagado) async {
+    final db = await database;
+    await db.update('tanda_semanas', {'pagado': pagado},
+        where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> iniciarNuevaSemana(int idTanda,
+      List<Map<String, dynamic>> participantes, int semana) async {
+    final db = await database;
+    for (final p in participantes) {
+      await db.insert('tanda_semanas', {
+        'id_tanda': idTanda,
+        'id_participante': p['id'],
+        'semana': semana,
+        'pagado': 0,
+      });
+    }
+  }
+
+ static Future<List<Map<String, dynamic>>> getParticipantesConSemana(
+    int idTanda, int semana) async {
+  final db = await database;
+  final participantes = await db.query('tanda_participantes',
+      where: 'id_tanda = ?', whereArgs: [idTanda]);
+  
+  final List<Map<String, dynamic>> resultado = [];
+  for (final p in participantes) {
+    final semanaData = await db.query('tanda_semanas',
+        where: 'id_participante = ? AND semana = ? AND id_tanda = ?',
+        whereArgs: [p['id'], semana, idTanda]);
+    
+    resultado.add({
+      'id': p['id'],
+      'nombre': p['nombre'],
+      'pagado': semanaData.isNotEmpty ? semanaData.first['pagado'] : 0,
+      'semana_id': semanaData.isNotEmpty ? semanaData.first['id'] : null,
+    });
+  }
+  return resultado;
+}
+  // ── TOTALES DASHBOARD ─────────────────────────────
   static Future<double> getTotalVentas(int idUsuario) async {
     final db = await database;
     final result = await db.rawQuery(
@@ -239,9 +318,16 @@ class DBHelper {
 
   static Future<double> getTotalDeudas(int idUsuario) async {
     final db = await database;
-    final result = await db.rawQuery(
+    final resultVentas = await db.rawQuery(
         "SELECT SUM(monto) as total FROM ventas WHERE tipo = 'Crédito' AND id_usuario = ?",
         [idUsuario]);
-    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    final deudaVentas =
+        (resultVentas.first['total'] as num?)?.toDouble() ?? 0.0;
+    final resultClientes = await db.rawQuery(
+        "SELECT SUM(monto_deuda) as total FROM clientes WHERE debe = 1 AND id_usuario = ?",
+        [idUsuario]);
+    final deudaClientes =
+        (resultClientes.first['total'] as num?)?.toDouble() ?? 0.0;
+    return deudaVentas + deudaClientes;
   }
 }

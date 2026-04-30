@@ -125,15 +125,6 @@ class _TandasScreenState extends State<TandasScreen> {
     );
   }
 
-  void _verParticipantes(Map<String, dynamic> tanda) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ParticipantesScreen(tanda: tanda),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,22 +148,30 @@ class _TandasScreenState extends State<TandasScreen> {
                     color: const Color(0xFF2D1F5E),
                     borderRadius: BorderRadius.circular(14)),
                 child: ListTile(
-                  leading:
-                      const Icon(Icons.sync, color: Color(0xFFA78BFA)),
+                  leading: const Icon(Icons.sync,
+                      color: Color(0xFFA78BFA)),
                   title: Text(_tandas[i]['nombre'],
                       style: const TextStyle(color: Colors.white)),
                   subtitle: Text(
                       '${_tandas[i]['participantes']} participantes — \$${_tandas[i]['monto']}/sem',
-                      style:
-                          const TextStyle(color: Color(0xFF8B7EC8))),
+                      style: const TextStyle(color: Color(0xFF8B7EC8))),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
                         icon: const Icon(Icons.people,
                             color: Color(0xFF3CE16C)),
-                        tooltip: 'Ver participantes',
-                        onPressed: () => _verParticipantes(_tandas[i]),
+                        tooltip: 'Gestionar tanda',
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GestionTandaScreen(
+                                  tanda: _tandas[i]),
+                            ),
+                          );
+                          await _cargarTandas();
+                        },
                       ),
                       IconButton(
                         icon: const Icon(Icons.edit,
@@ -205,32 +204,74 @@ class _TandasScreenState extends State<TandasScreen> {
 }
 
 // ════════════════════════════════════════════════════
-// PANTALLA DE PARTICIPANTES
+// PANTALLA DE GESTIÓN DE TANDA
 // ════════════════════════════════════════════════════
-class ParticipantesScreen extends StatefulWidget {
+class GestionTandaScreen extends StatefulWidget {
   final Map<String, dynamic> tanda;
-  const ParticipantesScreen({super.key, required this.tanda});
+  const GestionTandaScreen({super.key, required this.tanda});
 
   @override
-  State<ParticipantesScreen> createState() => _ParticipantesScreenState();
+  State<GestionTandaScreen> createState() => _GestionTandaScreenState();
 }
 
-class _ParticipantesScreenState extends State<ParticipantesScreen> {
+class _GestionTandaScreenState extends State<GestionTandaScreen> {
   List<Map<String, dynamic>> _participantes = [];
+  List<Map<String, dynamic>> _semanaActual = [];
   final _nombreController = TextEditingController();
+  int _semana = 1;
+  int _maxParticipantes = 0;
+  int _ultimaSemanaCreada = 0;
 
   @override
   void initState() {
     super.initState();
-    _cargarParticipantes();
+    _maxParticipantes = widget.tanda['participantes'];
+    _cargarDatos();
   }
 
-  Future<void> _cargarParticipantes() async {
-    final data = await DBHelper.getParticipantes(widget.tanda['id']);
-    setState(() => _participantes = data);
+  Future<void> _cargarDatos() async {
+    final participantes =
+        await DBHelper.getParticipantes(widget.tanda['id']);
+    final ultimaSemana =
+        await DBHelper.getUltimaSemana(widget.tanda['id']);
+    if (ultimaSemana == 0) {
+      setState(() {
+        _participantes = participantes;
+        _semana = 1;
+        _semanaActual = [];
+        _ultimaSemanaCreada = 0;
+      });
+      return;
+    }
+    final semanaData = await DBHelper.getParticipantesConSemana(
+        widget.tanda['id'], _semana);
+    setState(() {
+      _participantes = participantes;
+      _semanaActual = semanaData;
+      _ultimaSemanaCreada = ultimaSemana;
+    });
   }
 
-  void _agregarParticipante() {
+  Future<void> _cargarSemana(int semana) async {
+    final semanaData = await DBHelper.getParticipantesConSemana(
+        widget.tanda['id'], semana);
+    setState(() {
+      _semana = semana;
+      _semanaActual = semanaData;
+    });
+  }
+
+  Future<void> _agregarParticipante() async {
+    if (_participantes.length >= _maxParticipantes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Límite alcanzado: máximo $_maxParticipantes participantes'),
+          backgroundColor: const Color(0xFFE13C6C),
+        ),
+      );
+      return;
+    }
     _nombreController.clear();
     showDialog(
       context: context,
@@ -259,9 +300,8 @@ class _ParticipantesScreenState extends State<ParticipantesScreen> {
               await DBHelper.insertParticipante({
                 'id_tanda': widget.tanda['id'],
                 'nombre': _nombreController.text,
-                'pagado': 0,
               });
-              await _cargarParticipantes();
+              await _cargarDatos();
               Navigator.pop(context);
             },
             child: const Text('Agregar',
@@ -272,10 +312,46 @@ class _ParticipantesScreenState extends State<ParticipantesScreen> {
     );
   }
 
+  Future<void> _iniciarNuevaSemana() async {
+    final nuevaSemana = _ultimaSemanaCreada + 1;
+    await DBHelper.iniciarNuevaSemana(
+        widget.tanda['id'], _participantes, nuevaSemana);
+    final semanaData = await DBHelper.getParticipantesConSemana(
+        widget.tanda['id'], nuevaSemana);
+    setState(() {
+      _semana = nuevaSemana;
+      _semanaActual = semanaData;
+      _ultimaSemanaCreada = nuevaSemana;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Semana $nuevaSemana iniciada ✅'),
+        backgroundColor: const Color(0xFF3CE16C),
+      ),
+    );
+  }
+
+  Future<void> _togglePago(Map<String, dynamic> p, bool val) async {
+    if (p['semana_id'] != null) {
+      await DBHelper.updateSemana(p['semana_id'], val ? 1 : 0);
+    } else {
+      await DBHelper.insertSemana({
+        'id_tanda': widget.tanda['id'],
+        'id_participante': p['id'],
+        'semana': _semana,
+        'pagado': val ? 1 : 0,
+      });
+    }
+    final semanaData = await DBHelper.getParticipantesConSemana(
+        widget.tanda['id'], _semana);
+    setState(() => _semanaActual = semanaData);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pagados = _participantes.where((p) => p['pagado'] == 1).length;
-    final total = _participantes.length;
+    final pagados =
+        _semanaActual.where((p) => p['pagado'] == 1).length;
+    final total = _semanaActual.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1A1035),
@@ -284,10 +360,18 @@ class _ParticipantesScreenState extends State<ParticipantesScreen> {
         title: Text(widget.tanda['nombre'],
             style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Color(0xFFA78BFA)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add,
+                color: Color(0xFF3CE16C)),
+            tooltip: 'Agregar participante',
+            onPressed: _agregarParticipante,
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Resumen de pagos
+          // Resumen
           Container(
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
@@ -316,94 +400,210 @@ class _ParticipantesScreenState extends State<ParticipantesScreen> {
                       style: TextStyle(color: Color(0xFF8B7EC8))),
                 ]),
                 Column(children: [
-                  Text('$total',
+                  Text(
+                      '${_participantes.length}/$_maxParticipantes',
                       style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFFA78BFA))),
-                  const Text('Total',
+                  const Text('Participantes',
                       style: TextStyle(color: Color(0xFF8B7EC8))),
                 ]),
               ],
             ),
           ),
-          // Lista de participantes
+
+          // Selector de semana
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: const Color(0xFF2D1F5E),
+                borderRadius: BorderRadius.circular(14)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios,
+                      color: Color(0xFFA78BFA)),
+                  onPressed:
+                      _semana > 1 ? () => _cargarSemana(_semana - 1) : null,
+                ),
+                Column(children: [
+                  Text('Semana $_semana',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  Text('\$${widget.tanda['monto']} por persona',
+                      style: const TextStyle(
+                          color: Color(0xFFA78BFA), fontSize: 12)),
+                ]),
+                IconButton(
+                  icon: const Icon(Icons.arrow_forward_ios,
+                      color: Color(0xFFA78BFA)),
+                  onPressed: _semana < _ultimaSemanaCreada
+                      ? () => _cargarSemana(_semana + 1)
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Lista
           Expanded(
             child: _participantes.isEmpty
                 ? const Center(
                     child: Text('No hay participantes aún.',
                         style: TextStyle(color: Color(0xFFA78BFA))))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _participantes.length,
-                    itemBuilder: (_, i) => Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF2D1F5E),
-                          borderRadius: BorderRadius.circular(14)),
-                      child: ListTile(
-                        leading: Icon(
-                          _participantes[i]['pagado'] == 1
-                              ? Icons.check_circle
-                              : Icons.radio_button_unchecked,
-                          color: _participantes[i]['pagado'] == 1
-                              ? const Color(0xFF3CE16C)
-                              : const Color(0xFFE13C6C),
-                          size: 28,
-                        ),
-                        title: Text(_participantes[i]['nombre'],
-                            style:
-                                const TextStyle(color: Colors.white)),
-                        subtitle: Text(
-                          _participantes[i]['pagado'] == 1
-                              ? 'Ya pagó ✅'
-                              : 'Pendiente ❌',
-                          style: TextStyle(
-                            color: _participantes[i]['pagado'] == 1
-                                ? const Color(0xFF3CE16C)
-                                : const Color(0xFFE13C6C),
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                : _semanaActual.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Switch(
-                              value: _participantes[i]['pagado'] == 1,
-                              activeColor: const Color(0xFF3CE16C),
-                              onChanged: (val) async {
-                                await DBHelper.updateParticipante(
-                                    _participantes[i]['id'],
-                                    {'pagado': val ? 1 : 0});
-                                await _cargarParticipantes();
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete,
-                                  color: Color(0xFFE13C6C)),
+                            const Text('Semana no iniciada',
+                                style: TextStyle(
+                                    color: Color(0xFFA78BFA),
+                                    fontSize: 16)),
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      const Color(0xFF6C3CE1)),
                               onPressed: () async {
-                                await DBHelper.updateParticipante(
-                                    _participantes[i]['id'],
-                                    {'pagado': 0});
-                                final db = await DBHelper.database;
-                                await db.delete('tanda_participantes',
-                                    where: 'id = ?',
-                                    whereArgs: [_participantes[i]['id']]);
-                                await _cargarParticipantes();
+                                await DBHelper.iniciarNuevaSemana(
+                                    widget.tanda['id'],
+                                    _participantes,
+                                    1);
+                                await _cargarDatos();
                               },
+                              icon: const Icon(Icons.play_arrow,
+                                  color: Colors.white),
+                              label: const Text('Iniciar Semana 1',
+                                  style:
+                                      TextStyle(color: Colors.white)),
                             ),
                           ],
                         ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _semanaActual.length,
+                        itemBuilder: (_, i) {
+                          final p = _semanaActual[i];
+                          final pagado = p['pagado'] == 1;
+                          final sinRegistrar = p['semana_id'] == null;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2D1F5E),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: sinRegistrar
+                                    ? const Color(0xFF3D2870)
+                                    : pagado
+                                        ? const Color(0xFF3CE16C)
+                                        : const Color(0xFFE13C6C),
+                                width: 1,
+                              ),
+                            ),
+                            child: ListTile(
+                              leading: Icon(
+                                sinRegistrar
+                                    ? Icons.radio_button_unchecked
+                                    : pagado
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                color: sinRegistrar
+                                    ? const Color(0xFF8B7EC8)
+                                    : pagado
+                                        ? const Color(0xFF3CE16C)
+                                        : const Color(0xFFE13C6C),
+                                size: 28,
+                              ),
+                              title: Text(p['nombre'],
+                                  style: const TextStyle(
+                                      color: Colors.white)),
+                              subtitle: Text(
+                                sinRegistrar
+                                    ? 'Sin registrar'
+                                    : pagado
+                                        ? 'Pagó ✅'
+                                        : 'Pendiente ❌',
+                                style: TextStyle(
+                                  color: sinRegistrar
+                                      ? const Color(0xFF8B7EC8)
+                                      : pagado
+                                          ? const Color(0xFF3CE16C)
+                                          : const Color(0xFFE13C6C),
+                                ),
+                              ),
+                              trailing: Switch(
+                                value: pagado,
+                                activeColor: const Color(0xFF3CE16C),
+                                inactiveThumbColor:
+                                    const Color(0xFF8B7EC8),
+                                inactiveTrackColor:
+                                    const Color(0xFF3D2870),
+                                onChanged: (val) =>
+                                    _togglePago(p, val),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                  ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF6C3CE1),
-        onPressed: _agregarParticipante,
-        child: const Icon(Icons.person_add, color: Colors.white),
-      ),
+
+      floatingActionButton: _semanaActual.isNotEmpty && total > 0
+          ? FloatingActionButton.extended(
+              backgroundColor: pagados == total
+                  ? const Color(0xFF3CE16C)
+                  : const Color(0xFF6C3CE1),
+              onPressed: () async {
+                final confirmar = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    backgroundColor: const Color(0xFF2D1F5E),
+                    title: const Text('Nueva Semana',
+                        style: TextStyle(color: Colors.white)),
+                    content: Text(
+                      pagados == total
+                          ? '¿Iniciar semana ${_ultimaSemanaCreada + 1}? Todos pagaron ✅'
+                          : '¿Iniciar semana ${_ultimaSemanaCreada + 1}? Hay ${total - pagados} pendientes ⚠️',
+                      style: const TextStyle(
+                          color: Color(0xFFA78BFA)),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.pop(context, false),
+                        child: const Text('Cancelar',
+                            style: TextStyle(
+                                color: Color(0xFFA78BFA))),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                const Color(0xFF6C3CE1)),
+                        onPressed: () =>
+                            Navigator.pop(context, true),
+                        child: const Text('Iniciar',
+                            style:
+                                TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmar == true) await _iniciarNuevaSemana();
+              },
+              icon: const Icon(Icons.skip_next, color: Colors.white),
+              label: Text('Semana ${_ultimaSemanaCreada + 1}',
+                  style: const TextStyle(color: Colors.white)),
+            )
+          : null,
     );
   }
 }
