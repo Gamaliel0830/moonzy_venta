@@ -317,17 +317,60 @@ class _GestionTandaScreenState extends State<GestionTandaScreen> {
   }
 
   Future<void> _iniciarNuevaSemana() async {
+    final totalSemanas = widget.tanda['participantes'] as int;
     final nuevaSemana = _ultimaSemanaCreada + 1;
+
+    if (nuevaSemana > totalSemanas) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF2D1F5E),
+          title: const Row(
+            children: [
+              Icon(Icons.emoji_events, color: Color(0xFFFFD700), size: 28),
+              SizedBox(width: 8),
+              Text('¡Tanda Concluida!',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Text(
+            "La tanda \"${widget.tanda['nombre']}\" ha completado sus $totalSemanas semanas. ¡Todos los participantes recibieron su turno! 🎉",
+            style: const TextStyle(color: Color(0xFFA78BFA)),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6C3CE1)),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Aceptar',
+                  style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     await DBHelper.iniciarNuevaSemana(
         widget.tanda['id'], _participantes, nuevaSemana);
-    // Usar resetSemana:true para navegar a la semana recién creada
     await _cargarDatos(resetSemana: true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Semana $nuevaSemana iniciada ✅'),
-        backgroundColor: const Color(0xFF3CE16C),
-      ),
-    );
+
+    if (nuevaSemana == totalSemanas) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Semana \$nuevaSemana iniciada — ¡Es la última semana! 🏁'),
+          backgroundColor: const Color(0xFFFFD700),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Semana \$nuevaSemana iniciada (\$nuevaSemana/\$totalSemanas) ✅'),
+          backgroundColor: const Color(0xFF3CE16C),
+        ),
+      );
+    }
   }
 
   Future<void> _togglePago(Map<String, dynamic> p, bool val) async {
@@ -556,7 +599,7 @@ class _GestionTandaScreenState extends State<GestionTandaScreen> {
         ],
       ),
 
-      floatingActionButton: _semanaActual.isNotEmpty && total > 0
+      floatingActionButton: _semanaActual.isNotEmpty && total > 0 && _ultimaSemanaCreada < widget.tanda['participantes']
           ? FloatingActionButton.extended(
               backgroundColor: pagados == total
                   ? const Color(0xFF3CE16C)

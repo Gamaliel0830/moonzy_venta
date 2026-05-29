@@ -14,7 +14,7 @@ class DBHelper {
     final path = join(await getDatabasesPath(), 'moonzy.db');
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await _crearTablas(db);
       },
@@ -25,6 +25,7 @@ class DBHelper {
         await db.execute('DROP TABLE IF EXISTS tandas');
         await db.execute('DROP TABLE IF EXISTS tanda_participantes');
         await db.execute('DROP TABLE IF EXISTS tanda_semanas');
+        await db.execute('DROP TABLE IF EXISTS inventario');
         await _crearTablas(db);
       },
     );
@@ -55,7 +56,8 @@ class DBHelper {
         id_usuario INTEGER,
         producto TEXT,
         monto REAL,
-        tipo TEXT
+        tipo TEXT,
+        id_producto INTEGER
       )
     ''');
     await db.execute('''
@@ -90,6 +92,16 @@ class DBHelper {
         id_participante INTEGER,
         semana INTEGER,
         pagado INTEGER DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS inventario (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_usuario INTEGER,
+        nombre TEXT,
+        costo REAL DEFAULT 0.0,
+        precio_venta REAL DEFAULT 0.0,
+        stock INTEGER DEFAULT 0
       )
     ''');
   }
@@ -338,5 +350,52 @@ class DBHelper {
     final deudaClientes =
         (resultClientes.first['total'] as num?)?.toDouble() ?? 0.0;
     return deudaVentas + deudaClientes;
+  }
+
+  // ── INVENTARIO ────────────────────────────────────
+  static Future<void> insertInventario(Map<String, dynamic> producto) async {
+    final db = await database;
+    await db.insert('inventario', producto);
+  }
+
+  static Future<List<Map<String, dynamic>>> getInventario(int idUsuario) async {
+    final db = await database;
+    return await db.query('inventario',
+        where: 'id_usuario = ?', whereArgs: [idUsuario]);
+  }
+
+  static Future<Map<String, dynamic>?> getProductoInventario(int id) async {
+    final db = await database;
+    final result = await db.query('inventario', where: 'id = ?', whereArgs: [id]);
+    return result.isNotEmpty ? result.first : null;
+  }
+
+  static Future<void> updateInventario(int id, Map<String, dynamic> data) async {
+    final db = await database;
+    await db.update('inventario', data, where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> deleteInventario(int id) async {
+    final db = await database;
+    await db.delete('inventario', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> descontarStock(int id, int cantidad) async {
+    final db = await database;
+    await db.rawUpdate(
+        'UPDATE inventario SET stock = stock - ? WHERE id = ? AND stock >= ?',
+        [cantidad, id, cantidad]);
+  }
+
+  // Ganancia real = suma de (precio_venta - costo) por cada venta con id_producto
+  static Future<double> getTotalGanancias(int idUsuario) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT SUM(v.monto - COALESCE(i.costo, 0)) as total
+      FROM ventas v
+      LEFT JOIN inventario i ON v.id_producto = i.id
+      WHERE v.id_usuario = ?
+    ''', [idUsuario]);
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 }

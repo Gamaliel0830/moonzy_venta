@@ -5,6 +5,7 @@ import 'clientes_screen.dart';
 import 'ventas_screen.dart';
 import 'gastos_screen.dart';
 import 'tandas_screen.dart';
+import 'inventario_screen.dart';
 import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   String _nombreUsuario = '';
-int _idUsuario = 0;
+  int _idUsuario = 0;
   double _totalVentas = 0;
   double _totalGastos = 0;
   double _totalDeudas = 0;
@@ -32,14 +33,15 @@ int _idUsuario = 0;
     final prefs = await SharedPreferences.getInstance();
     _idUsuario = prefs.getInt('usuario_id') ?? 0;
     final ventas = await DBHelper.getTotalVentas(_idUsuario);
-final gastos = await DBHelper.getTotalGastos(_idUsuario);
-final deudas = await DBHelper.getTotalDeudas(_idUsuario);
+    final gastos = await DBHelper.getTotalGastos(_idUsuario);
+    final deudas = await DBHelper.getTotalDeudas(_idUsuario);
+    final ganancias = await DBHelper.getTotalGanancias(_idUsuario);
     setState(() {
       _nombreUsuario = prefs.getString('usuario_nombre') ?? 'Usuario';
       _totalVentas = ventas;
       _totalGastos = gastos;
       _totalDeudas = deudas;
-      _ganancias = ventas - gastos;
+      _ganancias = ganancias - gastos;
     });
   }
 
@@ -103,11 +105,13 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('¡Hola, ${_nombreUsuario.isEmpty ? "Usuario" : _nombreUsuario}! 👋',
-                  style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
+              Text(
+                '¡Hola, ${_nombreUsuario.isEmpty ? "Usuario" : _nombreUsuario}! 👋',
+                style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
+              ),
               const Text('Resumen de tu negocio',
                   style: TextStyle(color: Color(0xFFA78BFA))),
               const SizedBox(height: 16),
@@ -119,7 +123,7 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _ResumenCard(
-                    titulo: 'Ventas del mes',
+                    titulo: 'Total Ventas',
                     valor: '\$${_totalVentas.toStringAsFixed(2)}',
                     color: const Color(0xFF6C3CE1),
                     icono: Icons.trending_up,
@@ -137,13 +141,16 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                     icono: Icons.receipt,
                   ),
                   _ResumenCard(
-                    titulo: 'Ganancias',
+                    titulo: 'Ganancia real',
                     valor: '\$${_ganancias.toStringAsFixed(2)}',
-                    color: const Color(0xFF3CE16C),
+                    color: _ganancias >= 0
+                        ? const Color(0xFF3CE16C)
+                        : const Color(0xFFE13C6C),
                     icono: Icons.savings,
                   ),
                 ],
               ),
+
               const SizedBox(height: 20),
               const Text('Módulos',
                   style: TextStyle(
@@ -156,8 +163,10 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                 subtitulo: 'Gestiona tu cartera de clientes',
                 icono: Icons.people,
                 onTap: () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const ClientesScreen()));
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const ClientesScreen()));
                   _cargarDatos();
                 },
               ),
@@ -166,8 +175,22 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                 subtitulo: 'Registra y controla tus ventas',
                 icono: Icons.point_of_sale,
                 onTap: () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const VentasScreen()));
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const VentasScreen()));
+                  _cargarDatos();
+                },
+              ),
+              _ModuloTile(
+                titulo: 'Inventario',
+                subtitulo: 'Controla tus productos y stock',
+                icono: Icons.inventory_2,
+                onTap: () async {
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const InventarioScreen()));
                   _cargarDatos();
                 },
               ),
@@ -176,8 +199,10 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                 subtitulo: 'Controla los gastos de tu negocio',
                 icono: Icons.receipt_long,
                 onTap: () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const GastosScreen()));
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const GastosScreen()));
                   _cargarDatos();
                 },
               ),
@@ -186,8 +211,10 @@ final deudas = await DBHelper.getTotalDeudas(_idUsuario);
                 subtitulo: 'Administra tus tandas y pagos',
                 icono: Icons.sync,
                 onTap: () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const TandasScreen()));
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const TandasScreen()));
                   _cargarDatos();
                 },
               ),
@@ -225,7 +252,8 @@ class _ResumenCard extends StatelessWidget {
               style: TextStyle(
                   fontSize: 20, fontWeight: FontWeight.bold, color: color)),
           Text(titulo,
-              style: const TextStyle(fontSize: 12, color: Color(0xFFA78BFA))),
+              style:
+                  const TextStyle(fontSize: 12, color: Color(0xFFA78BFA))),
         ],
       ),
     );
@@ -252,12 +280,13 @@ class _ModuloTile extends StatelessWidget {
       child: ListTile(
         leading: Icon(icono, color: const Color(0xFFA78BFA)),
         title: Text(titulo,
-            style:
-                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold)),
         subtitle: Text(subtitulo,
-            style:
-                const TextStyle(color: Color(0xFF8B7EC8), fontSize: 12)),
-        trailing: const Icon(Icons.chevron_right, color: Color(0xFFA78BFA)),
+            style: const TextStyle(
+                color: Color(0xFF8B7EC8), fontSize: 12)),
+        trailing:
+            const Icon(Icons.chevron_right, color: Color(0xFFA78BFA)),
         onTap: onTap,
       ),
     );
