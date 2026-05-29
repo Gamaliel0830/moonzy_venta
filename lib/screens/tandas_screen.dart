@@ -229,7 +229,7 @@ class _GestionTandaScreenState extends State<GestionTandaScreen> {
     _cargarDatos();
   }
 
-  Future<void> _cargarDatos() async {
+  Future<void> _cargarDatos({bool resetSemana = false}) async {
     final participantes =
         await DBHelper.getParticipantes(widget.tanda['id']);
     final ultimaSemana =
@@ -243,11 +243,15 @@ class _GestionTandaScreenState extends State<GestionTandaScreen> {
       });
       return;
     }
+    // Solo resetear a la última semana si se pide explícitamente (ej: al iniciar nueva semana)
+    // En cualquier otro caso, mantener la semana en la que el usuario está navegando
+    final semanaACargar = resetSemana ? ultimaSemana : _semana;
     final semanaData = await DBHelper.getParticipantesConSemana(
-        widget.tanda['id'], _semana);
+        widget.tanda['id'], semanaACargar);
     setState(() {
       _participantes = participantes;
       _semanaActual = semanaData;
+      _semana = semanaACargar;
       _ultimaSemanaCreada = ultimaSemana;
     });
   }
@@ -316,13 +320,8 @@ class _GestionTandaScreenState extends State<GestionTandaScreen> {
     final nuevaSemana = _ultimaSemanaCreada + 1;
     await DBHelper.iniciarNuevaSemana(
         widget.tanda['id'], _participantes, nuevaSemana);
-    final semanaData = await DBHelper.getParticipantesConSemana(
-        widget.tanda['id'], nuevaSemana);
-    setState(() {
-      _semana = nuevaSemana;
-      _semanaActual = semanaData;
-      _ultimaSemanaCreada = nuevaSemana;
-    });
+    // Usar resetSemana:true para navegar a la semana recién creada
+    await _cargarDatos(resetSemana: true);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Semana $nuevaSemana iniciada ✅'),

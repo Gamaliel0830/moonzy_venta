@@ -269,12 +269,21 @@ class DBHelper {
       List<Map<String, dynamic>> participantes, int semana) async {
     final db = await database;
     for (final p in participantes) {
-      await db.insert('tanda_semanas', {
-        'id_tanda': idTanda,
-        'id_participante': p['id'],
-        'semana': semana,
-        'pagado': 0,
-      });
+      // Verificar si ya existe un registro para este participante en esta semana
+      // Esto evita duplicados si la función se llama más de una vez
+      final existente = await db.query(
+        'tanda_semanas',
+        where: 'id_tanda = ? AND id_participante = ? AND semana = ?',
+        whereArgs: [idTanda, p['id'], semana],
+      );
+      if (existente.isEmpty) {
+        await db.insert('tanda_semanas', {
+          'id_tanda': idTanda,
+          'id_participante': p['id'],
+          'semana': semana,
+          'pagado': 0,
+        });
+      }
     }
   }
 
